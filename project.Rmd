@@ -1,0 +1,104 @@
+---
+title: "Practical Machine Learning Course Project"
+author: "Andrew Roberts"
+date: "July 2, 2016"
+output: html_document
+---
+
+#Introduction
+##Background
+Using devices such as Jawbone Up, Nike FuelBand, and Fitbit it is now possible to collect a large amount of data about personal activity relatively inexpensively. These type of devices are part of the quantified self movement - a group of enthusiasts who take measurements about themselves regularly to improve their health, to find patterns in their behavior, or because they are tech geeks. One thing that people regularly do is quantify how much of a particular activity they do, but they rarely quantify how well they do it. In this project, your goal will be to use data from accelerometers on the belt, forearm, arm, and dumbell of 6 participants. They were asked to perform barbell lifts correctly and incorrectly in 5 different ways. More information is available from the website here: http://groupware.les.inf.puc-rio.br/har (see the section on the Weight Lifting Exercise Dataset).
+
+##Data
+The training data for this project are available here:
+https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv
+
+The test data are available here:
+https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv
+
+The data for this project come from this source: http://groupware.les.inf.puc-rio.br/har
+
+To load the data, we must use the `read.csv` function:
+```{R loadcsv, cache=TRUE}
+urlTrain <- "https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv"
+urlTest <- "https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv"
+training <- read.csv(url(urlTrain), na.strings=c("NA","#DIV/0!",""))
+validation <- read.csv(url(urlTest), na.strings=c("NA","#DIV/0!",""))
+```
+
+#Preparation
+We need to load the libraries we will be using to perform our analysis of the data.
+```{R message=FALSE}
+library(AppliedPredictiveModeling)
+library(caret)
+library(randomForest)
+```
+
+We also need to set a seed so that our results are reproducible.
+```{R setSeed}
+set.seed(7216)
+```
+
+We also will remove any columns that contain no actual values in our final test set, as well as the first 7 columns and the last column, which contain only identifier information that is not relevant to our analysis.
+```{R removeNA}
+all_na <- sapply(names(validation),function(x) all(is.na(validation[,x])==TRUE))
+keep <- names(all_na)[all_na==FALSE]
+keep <- keep[-(1:7)]
+keep <- keep[1:length(keep)-1]
+keep <- c(keep,"classe")
+training_final <- training[,keep]
+```
+
+Finally, we need to subset our training data so that we can properly evaluate our results prior to running predictions on our final validation set.
+```{R subset}
+sample <- createDataPartition(training_final$classe,p=0.6,list=FALSE)
+train <- training_final[sample,]
+test <- training_final[-sample,]
+```
+
+#Model Building
+We will use two different algorithms to evaluate our data--one "simple" and one "complex".  The "simple" model will be decision trees with CART.  The "complex" model will be random forest decision trees.
+
+##Cross Validation
+We will use k-fold cross validation with k=3.
+```{R crossval}
+crossVal <- trainControl(method='cv', number=3)
+```
+
+##Decision Tree
+We run the following code to produce our decision tree model.
+```{R cart, cache=TRUE}
+model_tree <- train(classe ~ ., data=train,method="rpart",trControl=crossVal)
+```
+
+To assess our model, we can use a confusion matrix.
+```{R cart_assess}
+predTree <- predict(model_tree,newdata=test)
+cmTree <- confusionMatrix(predTree, test$classe)
+cmTree
+```
+
+The decision tree model would not be considered particularly accurate, with an overall accuracy of under 49.03%.  This means our error rate is over 50%.
+
+##Random Forest
+We run the following code to produce our decision tree model.
+```{R rf, cache=TRUE}
+modelRF <- train(classe ~ ., data=train, method="rf", trControl=crossVal)
+```
+
+To assess our model, we again use a confusion matrix.
+```{R rf_assess}
+predRF <- predict(modelRF,newdata=test)
+cmRF <- confusionMatrix(predRF,test$classe)
+cmRF
+```
+
+The random forest model does a far superior job with an accuracy rate of 99.01%.  Thie means our error rate is only 0.97%.  We will use this model to predict with our validation data.
+
+#Prediction
+Our last step is to use our random forest model to predict the `classe` variable for each obseration in the validation data set.
+```{R predict}
+predVal <- predict(modelRF,newdata=validation)
+ValResults <- data.frame(prob_id = validation$problem_id,prediction=predVal)
+ValResults
+```
